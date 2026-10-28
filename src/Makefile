@@ -17,14 +17,12 @@ IMGUI_SRC = \
     ../libs/imgui/backends/imgui_impl_glfw.cpp \
     ../libs/imgui/backends/imgui_impl_opengl3.cpp
 
-SRC = main.cpp camera.cpp render.cpp parseobj.cpp engine.cpp gpu_physics.cpp gl.c $(IMGUI_SRC)
 
-TARGET = app
 
 # mini golf game (reuses the window setup, sphere model loader and glad)
 GOLF_SRC = golf_main.cpp golf.cpp golf_render.cpp render.cpp parseobj.cpp gl.c $(IMGUI_SRC)
 
-all: $(TARGET) golf
+all: golf editor
 
 $(TARGET): $(SRC)
 	$(CXX) $(CXXFLAGS) $(SRC) -o $(TARGET) $(LDFLAGS)
