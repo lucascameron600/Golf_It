@@ -40,7 +40,7 @@ static bool pressedOnce(GLFWwindow* w, int key, bool& wasDown) {
 int main()
 {
     Render render;
-    GLFWwindow* window = render.glfwSetup(1280, 800, "Mini Golf");
+    GLFWwindow* window = render.glfwSetup(1280, 800, "Golf");
     if (!window) return 1;
     render.imguiSetup(window);
 
