@@ -1,0 +1,15 @@
+# Compiled output
+app
+*.o
+*.exe
+*.out
+*.a
+*.so
+*.dll
+
+gmon.out
+analysis.txt
+
+imgui.ini
+.vscode
+*Identifier

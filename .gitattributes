@@ -1,0 +1,5 @@
+* text=auto eol=lf
+libs/** linguist-vendored
+include/glad/** linguist-vendored
+include/KHR/** linguist-vendored
+src/gl.c linguist-vendored
