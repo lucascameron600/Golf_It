@@ -4,6 +4,12 @@ CXXFLAGS = -O2 -Wall -I../include -I../libs/imgui -I../libs/imgui/backends
 ifeq ($(OS),Windows_NT)
     # Windows (MSYS2 UCRT64 terminal)
     LDFLAGS = -lglfw3 -lopengl32 -lgdi32
+else ifeq ($(shell uname -s),Darwin)
+    # macOS (brew install glfw glm). Apple's compiler needs C++17 asked for,
+    # and -Wno-deprecated quiets it about compiling gl.c as C++
+    BREW := $(shell brew --prefix)
+    CXXFLAGS += -std=c++17 -Wno-deprecated -I$(BREW)/include
+    LDFLAGS = -L$(BREW)/lib -lglfw -framework OpenGL
 else
     # Linux / WSL
     LDFLAGS = -pg -lglfw -ldl -lGL -lX11 -lXxf86vm -lXcursor -lXinerama
