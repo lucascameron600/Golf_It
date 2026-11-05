@@ -36,7 +36,7 @@ private:
     GLuint shader = 0;
     GLint modelLoc = -1, colorLoc = -1;
     Mesh sphere, cube;
-    Mesh greenLight, greenDark, rough, walls;  // rebuilt for each hole
+    Mesh greenLight, greenDark, puttingGreen, rough, walls;  // rebuilt for each hole
     int builtVersion = -1;  // which version of the hole the meshes were built for
 };
 
