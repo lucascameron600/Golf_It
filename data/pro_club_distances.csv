@@ -1,0 +1,61 @@
+player,club,yards,yards_type,estimated,year,source,notes
+Tour Average,Driver,282,carry,no,2023,https://golfergeeks.com/golf-club-distance-chart/,TrackMan PGA Tour average; 115 mph club speed
+Tour Average,3-wood,249,carry,no,2023,https://golfergeeks.com/golf-club-distance-chart/,TrackMan PGA Tour average; 110 mph club speed
+Tour Average,5-wood,236,carry,no,2023,https://golfergeeks.com/golf-club-distance-chart/,TrackMan PGA Tour average; 106 mph club speed
+Tour Average,Hybrid,231,carry,no,2023,https://golfergeeks.com/golf-club-distance-chart/,TrackMan PGA Tour average; 15-18 deg; 102 mph club speed
+Tour Average,3-iron,218,carry,no,2023,https://golfergeeks.com/golf-club-distance-chart/,TrackMan PGA Tour average; 100 mph club speed
+Tour Average,4-iron,209,carry,no,2023,https://golfergeeks.com/golf-club-distance-chart/,TrackMan PGA Tour average; 98 mph club speed
+Tour Average,5-iron,199,carry,no,2023,https://golfergeeks.com/golf-club-distance-chart/,TrackMan PGA Tour average; 96 mph club speed
+Tour Average,6-iron,188,carry,no,2023,https://golfergeeks.com/golf-club-distance-chart/,TrackMan PGA Tour average; 94 mph club speed
+Tour Average,7-iron,176,carry,no,2023,https://golfergeeks.com/golf-club-distance-chart/,TrackMan PGA Tour average; 92 mph club speed
+Tour Average,8-iron,164,carry,no,2023,https://golfergeeks.com/golf-club-distance-chart/,TrackMan PGA Tour average; 89 mph club speed
+Tour Average,9-iron,152,carry,no,2023,https://golfergeeks.com/golf-club-distance-chart/,TrackMan PGA Tour average; 87 mph club speed
+Tour Average,PW,142,carry,no,2023,https://golfergeeks.com/golf-club-distance-chart/,TrackMan PGA Tour average; 84 mph club speed
+Rory McIlroy,Driver,320,unspecified,no,2022,https://golf.com/gear/rory-mcilroy-how-far-hits-every-club,Shown in TaylorMade video
+Rory McIlroy,3-wood,297,unspecified,yes,2022,https://golf.com/gear/rory-mcilroy-how-far-hits-every-club,Extrapolated by GOLF.com
+Rory McIlroy,5-wood,275,unspecified,no,2022,https://golf.com/gear/rory-mcilroy-how-far-hits-every-club,Shown in TaylorMade video
+Rory McIlroy,3-iron,255,unspecified,yes,2022,https://golf.com/gear/rory-mcilroy-how-far-hits-every-club,Extrapolated by GOLF.com
+Rory McIlroy,4-iron,240,unspecified,no,2022,https://golf.com/gear/rory-mcilroy-how-far-hits-every-club,Shown in TaylorMade video
+Rory McIlroy,5-iron,225,unspecified,yes,2022,https://golf.com/gear/rory-mcilroy-how-far-hits-every-club,Extrapolated by GOLF.com
+Rory McIlroy,6-iron,210,unspecified,no,2022,https://golf.com/gear/rory-mcilroy-how-far-hits-every-club,Shown in TaylorMade video
+Rory McIlroy,7-iron,195,unspecified,yes,2022,https://golf.com/gear/rory-mcilroy-how-far-hits-every-club,Extrapolated by GOLF.com
+Rory McIlroy,8-iron,180,unspecified,no,2022,https://golf.com/gear/rory-mcilroy-how-far-hits-every-club,Shown in TaylorMade video
+Rory McIlroy,9-iron,165,unspecified,yes,2022,https://golf.com/gear/rory-mcilroy-how-far-hits-every-club,Extrapolated by GOLF.com
+Rory McIlroy,PW,150,unspecified,no,2022,https://golf.com/gear/rory-mcilroy-how-far-hits-every-club,46 deg; shown in TaylorMade video
+Rory McIlroy,SW,125,unspecified,yes,2022,https://golf.com/gear/rory-mcilroy-how-far-hits-every-club,54 deg; extrapolated by GOLF.com
+Rory McIlroy,LW,105,unspecified,no,2022,https://golf.com/gear/rory-mcilroy-how-far-hits-every-club,58 deg; shown in TaylorMade video
+Jackson Koivun,Driver,308,total,no,2026,https://www.pgatour.com/player/66701/jackson-koivun/stats,PGA Tour driving distance average; 117.8 mph club speed
+Jackson Koivun,3-wood,255,carry,yes,2026,https://www.pgatour.com/player/66701/jackson-koivun/stats,Tour average x 117.8/115 mph club speed
+Jackson Koivun,3-iron,223,carry,yes,2026,https://www.pgatour.com/player/66701/jackson-koivun/stats,Tour average x 117.8/115 mph club speed
+Jackson Koivun,4-iron,214,carry,yes,2026,https://www.pgatour.com/player/66701/jackson-koivun/stats,Tour average x 117.8/115 mph club speed
+Jackson Koivun,5-iron,204,carry,yes,2026,https://www.pgatour.com/player/66701/jackson-koivun/stats,Tour average x 117.8/115 mph club speed
+Jackson Koivun,6-iron,193,carry,yes,2026,https://www.pgatour.com/player/66701/jackson-koivun/stats,Tour average x 117.8/115 mph club speed
+Jackson Koivun,7-iron,180,carry,yes,2026,https://www.pgatour.com/player/66701/jackson-koivun/stats,Tour average x 117.8/115 mph club speed
+Jackson Koivun,8-iron,168,carry,yes,2026,https://www.pgatour.com/player/66701/jackson-koivun/stats,Tour average x 117.8/115 mph club speed
+Jackson Koivun,9-iron,156,carry,yes,2026,https://www.pgatour.com/player/66701/jackson-koivun/stats,Tour average x 117.8/115 mph club speed
+Jackson Koivun,PW,145,carry,yes,2026,https://www.pgatour.com/player/66701/jackson-koivun/stats,46 deg; tour average x 117.8/115 mph club speed
+Scottie Scheffler,Driver,304,unspecified,no,2024,https://www.golf365.com/news/how-far-scottie-scheffler-hits-each-club,8 deg
+Scottie Scheffler,3-wood,268,unspecified,no,2024,https://www.golf365.com/news/how-far-scottie-scheffler-hits-each-club,15 deg
+Scottie Scheffler,3-iron,245,unspecified,no,2024,https://www.golf365.com/news/how-far-scottie-scheffler-hits-each-club,
+Scottie Scheffler,4-iron,226,unspecified,no,2024,https://www.golf365.com/news/how-far-scottie-scheffler-hits-each-club,
+Scottie Scheffler,5-iron,210,unspecified,no,2024,https://www.golf365.com/news/how-far-scottie-scheffler-hits-each-club,
+Scottie Scheffler,6-iron,196,unspecified,no,2024,https://www.golf365.com/news/how-far-scottie-scheffler-hits-each-club,
+Scottie Scheffler,7-iron,183,unspecified,no,2024,https://www.golf365.com/news/how-far-scottie-scheffler-hits-each-club,
+Scottie Scheffler,8-iron,172,unspecified,no,2024,https://www.golf365.com/news/how-far-scottie-scheffler-hits-each-club,
+Scottie Scheffler,9-iron,156,unspecified,no,2024,https://www.golf365.com/news/how-far-scottie-scheffler-hits-each-club,
+Scottie Scheffler,PW,142,unspecified,no,2024,https://www.golf365.com/news/how-far-scottie-scheffler-hits-each-club,
+Scottie Scheffler,GW,128,unspecified,no,2024,https://www.golf365.com/news/how-far-scottie-scheffler-hits-each-club,50 deg
+Scottie Scheffler,SW,117,unspecified,no,2024,https://www.golf365.com/news/how-far-scottie-scheffler-hits-each-club,56 deg
+Scottie Scheffler,LW,105,unspecified,no,2024,https://www.golf365.com/news/how-far-scottie-scheffler-hits-each-club,60 deg
+Tiger Woods,Driver,297,unspecified,no,2019,https://www.golfmagic.com/equipment-news/how-do-tiger-woods-yardages-stack-against-your-own-golf-game,Season averages from caddie Joe LaCava
+Tiger Woods,3-wood,265,unspecified,no,2019,https://www.golfmagic.com/equipment-news/how-do-tiger-woods-yardages-stack-against-your-own-golf-game,
+Tiger Woods,5-wood,245,unspecified,no,2019,https://www.golfmagic.com/equipment-news/how-do-tiger-woods-yardages-stack-against-your-own-golf-game,
+Tiger Woods,3-iron,227,unspecified,no,2019,https://www.golfmagic.com/equipment-news/how-do-tiger-woods-yardages-stack-against-your-own-golf-game,
+Tiger Woods,4-iron,215,unspecified,no,2019,https://www.golfmagic.com/equipment-news/how-do-tiger-woods-yardages-stack-against-your-own-golf-game,
+Tiger Woods,5-iron,200,unspecified,no,2019,https://www.golfmagic.com/equipment-news/how-do-tiger-woods-yardages-stack-against-your-own-golf-game,
+Tiger Woods,6-iron,186,unspecified,no,2019,https://www.golfmagic.com/equipment-news/how-do-tiger-woods-yardages-stack-against-your-own-golf-game,
+Tiger Woods,7-iron,170,unspecified,no,2019,https://www.golfmagic.com/equipment-news/how-do-tiger-woods-yardages-stack-against-your-own-golf-game,
+Tiger Woods,8-iron,157,unspecified,no,2019,https://www.golfmagic.com/equipment-news/how-do-tiger-woods-yardages-stack-against-your-own-golf-game,
+Tiger Woods,9-iron,148,unspecified,no,2019,https://www.golfmagic.com/equipment-news/how-do-tiger-woods-yardages-stack-against-your-own-golf-game,
+Tiger Woods,PW,136,unspecified,no,2019,https://www.golfmagic.com/equipment-news/how-do-tiger-woods-yardages-stack-against-your-own-golf-game,
+Tiger Woods,SW,118,unspecified,no,2019,https://www.golfmagic.com/equipment-news/how-do-tiger-woods-yardages-stack-against-your-own-golf-game,
