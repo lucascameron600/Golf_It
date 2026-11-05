@@ -247,10 +247,76 @@ static std::vector<Hole> buildCourse() {
     return course;
 }
 
+// Full-size golf holes, separate from the mini golf course. Units are meters
+// (gravity is 9.8), so a 150 m par 3 is about 165 yards. No walls: leaving the
+// playable area is out of bounds (back to the last spot, +1 stroke). The ball
+// starts each hole on a tee. The ball is 0.4 m wide (about 10x real size so you
+// can still see it), and the tee and cup are scaled to match.
+static std::vector<Hole> buildRealCourse() {
+    std::vector<Hole> course;
+
+    // Hole 1: straight par 3, 150 m (164 yd)
+    {
+        Hole h;
+        h.name = "Par 3 - 164 yd";
+        h.par = 3;
+        h.tee = 0.15f;
+        h.cupRadius = 0.45f;
+        h.greenRadius = 15.0f;
+        h.start = glm::vec3(0, 0, 0);
+        h.startAim = 0.0f;
+        h.cup = glm::vec3(0, 0, -150);
+        h.rects.push_back(Rect{ {-20, -175}, {20, 8} });
+        course.push_back(h);
+    }
+
+    // Hole 2: par 4 dogleg right, 250 m up then 110 m across (about 394 yd)
+    {
+        Hole h;
+        h.name = "Dogleg Right - 394 yd";
+        h.par = 4;
+        h.tee = 0.15f;
+        h.cupRadius = 0.45f;
+        h.greenRadius = 15.0f;
+        h.start = glm::vec3(0, 0, 0);
+        h.startAim = 0.0f;
+        h.cup = glm::vec3(110, 0, -250);
+        h.rects.push_back(Rect{ {-25, -280}, {25, 8} });     // first leg, 50 m wide
+        h.rects.push_back(Rect{ {25, -280}, {140, -220} });  // turn to the right
+        course.push_back(h);
+    }
+
+    // Hole 3: straight par 5, 460 m (503 yd), with gentle rolls in the middle
+    {
+        Hole h;
+        h.name = "Par 5 - 503 yd";
+        h.par = 5;
+        h.tee = 0.15f;
+        h.cupRadius = 0.45f;
+        h.greenRadius = 15.0f;
+        h.start = glm::vec3(0, 0, 0);
+        h.startAim = 0.0f;
+        h.cup = glm::vec3(0, 0, -460);
+        h.rects.push_back(Rect{ {-30, -490}, {30, 8} });
+        h.stamps.push_back(Stamp::rollers('z', 1.0f, 60.0f).limit(-40, -380, 40, -60, 20));
+        course.push_back(h);
+    }
+
+    for (Hole& h : course) finalizeHole(h);
+    return course;
+}
+
 // ---------- game flow ----------
 
 GolfGame::GolfGame() {
     holes = buildCourse();
+    loadHole(0);
+}
+
+void GolfGame::loadCourse(bool realGolf) {
+    holes = realGolf ? buildRealCourse() : buildCourse();
+    radius = realGolf ? 0.2f : 0.5f;  // real golf: a smaller ball (still ~10x real size so you can see it)
+    scores.clear();
     loadHole(0);
 }
 
@@ -284,7 +350,7 @@ void GolfGame::placeBall(glm::vec3 position) {
 }
 
 void GolfGame::resetHole() {
-    ballPos = hole().start + glm::vec3(0, radius, 0);
+    ballPos = hole().start + glm::vec3(0, radius + hole().tee, 0);
     prevPos = ballPos;
     lastRestPos = ballPos;
     ballState = BallState::Ready;
@@ -320,10 +386,19 @@ void GolfGame::hit(float aimAngle, float power) {
     if (ballState != BallState::Ready) return;
     power = std::clamp(power, 0.0f, 1.0f);
     glm::vec3 dir(std::sin(aimAngle), 0.0f, -std::cos(aimAngle));
-    // aim along the ground, so uphill/downhill shots follow the slope
-    glm::vec3 n = groundNormal(ballPos.x, ballPos.z);
-    dir = glm::normalize(dir - glm::dot(dir, n) * n);
-    glm::vec3 vel = dir * (power * maxHitSpeed);
+    glm::vec3 vel;
+    if (launchAngle > 0.0f) {
+        // full shot: tilt the level aim up by the launch angle. Carry grows with
+        // speed squared, so sqrt(power) makes half power carry half as far
+        glm::vec3 up(0.0f, 1.0f, 0.0f);
+        vel = (dir * std::cos(launchAngle) + up * std::sin(launchAngle)) * (std::sqrt(power) * maxHitSpeed);
+    } else {
+        // putt: aim along the ground, so uphill/downhill shots follow the slope
+        glm::vec3 n = groundNormal(ballPos.x, ballPos.z);
+        dir = glm::normalize(dir - glm::dot(dir, n) * n);
+        vel = dir * (power * maxHitSpeed);
+    }
+    flying = launchAngle > 0.0f;
 
     // Verlet has no velocity variable: moving prevPos backwards gives the ball speed
     lastRestPos = ballPos;
@@ -471,6 +546,12 @@ void GolfGame::physicsStep() {
             float bounce = (vn < -3.0f) ? 0.3f : 0.0f;   // landings bounce a little
             vel -= (1.0f + bounce) * vn * n;
         }
+        if (flying) {
+            // first landing of a full shot: the ball digs in and its backspin
+            // grabs, so it keeps only a small part of its speed (bounce included)
+            vel *= landingRoll;
+            flying = false;
+        }
     }
     // (if the ground drops away faster than the ball falls, e.g. over the top of
     //  a hill or off a ramp, there's no contact and the ball flies)
@@ -493,9 +574,10 @@ void GolfGame::physicsStep() {
         return;
     }
 
-    // escaped the course somehow: put it back with a 1 stroke penalty
+    // escaped the course somehow: put it back with a 1 stroke penalty.
+    // Only once it's on the ground, so a shot can fly over the rough
     bool lost = hole().autoWalls ? ballPos.y < ground - 20.0f
-                                 : (!onGreen(ballPos.x, ballPos.z) || ballPos.y < -5.0f);
+                                 : ((touching && !onGreen(ballPos.x, ballPos.z)) || ballPos.y < -5.0f);
     if (lost) {
         ballPos = lastRestPos;
         prevPos = ballPos;

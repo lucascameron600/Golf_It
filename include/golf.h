@@ -50,6 +50,9 @@ struct Hole {
     int par = 3;
     glm::vec3 start{0.0f};    // where the ball is placed (y is filled in automatically)
     float startAim = 0.0f;    // initial aim angle (radians, 0 = toward -z)
+    float tee = 0.0f;         // the first shot sits this high on a tee (0 = on the ground)
+    float greenRadius = 0.0f; // real golf: size of the putting green around the cup; the rest
+                              // is drawn as plain fairway (0 = mini golf checkerboard everywhere)
     glm::vec3 cup{0.0f};      // center of the hole (y is filled in automatically)
     float cupRadius = 0.85f;
 
@@ -82,6 +85,7 @@ public:
     GolfGame();
 
     // course flow
+    void loadCourse(bool realGolf);  // false = mini golf holes, true = full-size golf holes
     void loadHole(int index);
     void resetHole();               // replay the current hole from the start
     bool nextHole();                // false if this was the last hole
@@ -126,6 +130,8 @@ public:
     float wallBounce    = 0.7f;   // 1 = perfectly bouncy, 0 = dead stop
     float bumperBounce  = 1.15f;  // bumpers add a little energy
     float maxSinkSpeed  = 9.0f;   // faster than this and the ball rolls over the cup
+    float launchAngle   = 0.0f;   // radians above level: 0 = putt along the ground, more = the ball flies
+    float landingRoll   = 0.2f;   // share of its speed a flying ball keeps when it first lands
 
 private:
     void physicsStep();
@@ -145,6 +151,7 @@ private:
     int strokeCount = 0;
     std::vector<int> scores;
     bool outOfBounds = false;
+    bool flying = false;          // hit into the air and hasn't landed yet
     float slowTime = 0.0f;        // how long the ball has been almost still
     float rollTime = 0.0f;        // how long this shot has been rolling
 
