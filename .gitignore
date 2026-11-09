@@ -6,6 +6,9 @@ app
 *.a
 *.so
 *.dll
+# the game and editor built on macOS / Linux (no .exe there)
+src/golf
+src/editor
 
 gmon.out
 analysis.txt
