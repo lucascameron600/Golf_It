@@ -1,7 +1,7 @@
-// Mini golf built on the physics sandbox.
+// Golf built on the physics sandbox.
 // Controls: A/D or Left/Right = aim,
 //           hold right mouse (or both) and swipe down then up = swing
-//           (how far you pull down = power),
+//           (how far you pull down = power; aim for 3 beats back, 1 beat through),
 //           left-drag = aim, scroll = zoom,
 //           F = free view (WASD fly, drag to look) and back,
 //           Q / E = longer / shorter club (the game suggests one before each shot),
@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cctype>
 #include <algorithm>
+#include <random>
 #include <string>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -59,6 +60,35 @@ static bool pressedOnce(GLFWwindow* w, int key, bool& wasDown) {
     return pressed;
 }
 
+// Every shot misses by a random amount. The club sets how much, and a swing
+// that misses the tempo multiplies it. The numbers are one standard deviation,
+// and all of them can be changed live under Settings > Swing tuning.
+struct SwingTuning {
+    float idealTempo = 3.0f;      // backswing time / downswing time
+    float tempoWindow = 0.2f;     // this close to ideal (20%) counts as perfect
+    float tempoPenalty = 4.0f;    // bigger = bad timing hurts more quickly
+    float maxPenalty = 6.0f;      // the worst swing sprays this many times the club's scatter
+    float wedgeSpread = 1.6f;     // degrees off line for clubs up to 120 yards
+    float driverSpread = 3.0f;    // degrees off line for clubs of 300 yards and up
+    float putterSpread = 0.3f;    // degrees off line for the putter
+    float powerSpread = 0.015f;   // fraction of power (flight distance moves about twice this)
+};
+
+// how far off line a club goes on a perfect swing, in degrees. Scaling by the
+// club's yardage works for any player in the CSV. A negative row is the putter.
+static float clubSpread(const SwingTuning& t, const std::vector<ClubDistance>& clubs, int row) {
+    if (row < 0) return t.putterSpread;
+    float f = std::clamp((clubs[row].yards - 120.0f) / 180.0f, 0.0f, 1.0f);
+    return t.wedgeSpread + (t.driverSpread - t.wedgeSpread) * f;
+}
+
+// 1 for a swing inside the tempo window, climbing to maxPenalty outside it.
+// Using log means 1.5:1 and 6:1 (both twice as far from 3:1) cost the same.
+static float tempoMultiplier(const SwingTuning& t, float tempo) {
+    float off = std::fabs(std::log(tempo / t.idealTempo)) - std::log(1.0f + t.tempoWindow);
+    return std::min(t.maxPenalty, 1.0f + t.tempoPenalty * std::max(0.0f, off));
+}
+
 int main()
 {
     Render render;
@@ -87,18 +117,26 @@ int main()
     printClubDistances(clubs);
 
     GolfGame game;
+    SurfaceFeel turfDefaults[4];  // for the Reset turf button
+    for (int s = 0; s < 4; s++) turfDefaults[s] = game.feel[s];
 
     // The chosen club flies a simple arc (gravity only, no air) that lands at the
     // club's yardage and peaks at 30 yards: TrackMan's tour averages have every
     // club topping out within a few yards of that. Row -1 = the putter: roll along the ground.
-    const float normalHitSpeed = game.maxHitSpeed;
+    // It also hands the game how a real ball comes down with this club (angle,
+    // speed, backspin), which sets how it bounces and runs out.
+    const float puttSpeed = game.maxHitSpeed;  // the game starts with the putter's full-power speed
     auto pickClub = [&](int i) {
-        if (i < 0) { game.launchAngle = 0.0f; game.maxHitSpeed = normalHitSpeed; return; }
+        if (i < 0) { game.launchAngle = 0.0f; game.maxHitSpeed = puttSpeed; return; }
         float carry = clubs[i].yards * 0.9144f;  // meters
         float peak = 30.0f * 0.9144f;
         // for an arc with no air: peak / carry = tan(launch) / 4, and carry = v^2 sin(2 launch) / g
         game.launchAngle = std::atan(4.0f * peak / carry);
         game.maxHitSpeed = std::sqrt(carry * 9.8f / std::sin(2.0f * game.launchAngle));  // 9.8 = GolfGame's gravity
+        ClubLanding land = clubLanding((float)clubs[i].yards);
+        game.landingAngle = glm::radians(land.angleDeg);
+        game.landingSpeed = land.speed;
+        game.landingSpin = land.spinRpm;
     };
 
     // the bag: the player's rows in the CSV (longest first, as in the file) plus
@@ -132,11 +170,16 @@ int main()
     // mouse swing: screen points where it started and the bottom of the backswing
     bool swinging = false;
     ImVec2 swingStart, swingTop;
+    // swing timing. Holding still before the takeaway or at the top costs nothing:
+    // the clocks run from the first movement back to the top, then from leaving the top to impact
+    float backStartTime = -1.0f, swingTopTime = 0.0f, downStartTime = -1.0f;  // -1 = not yet
+    SwingTuning swingTuning;
+    std::mt19937 rng{std::random_device{}()};
     float lastPathDeg = 0.0f;  // how far off straight the last swing sent the ball
+    float lastTempo = 0.0f;    // backswing / downswing time of the last shot (0 = none yet)
     bool courseDone = false;
-    bool realGolf = false;     // which holes: mini golf or the full-size course
     glm::vec3 camTarget = game.ballPosition();
-    float camDistance = 9.0f, camHeight = 4.5f;
+    float camDistance = 8.0f, camHeight = 2.5f;
     float lastFrame = (float)glfwGetTime();
 
     // after the ball goes back on a tee: face down the hole, forget the old shot
@@ -148,13 +191,12 @@ int main()
         needClub = true;
     };
 
-    // the normal view: behind the ball at the usual distance and height. Real golf
-    // sits lower and closer behind a smaller ball, so it's small at the bottom of
-    // the screen with the hole stretching out ahead
+    // the normal view: low and close behind the ball, so it's small at the bottom
+    // of the screen with the hole stretching out ahead
     auto resetCamera = [&]() {
         camTarget = game.ballPosition();
-        camDistance = realGolf ? 8.0f : 9.0f;
-        camHeight = realGolf ? 2.5f : 4.5f;
+        camDistance = 8.0f;
+        camHeight = 2.5f;
     };
 
     // free view: F lets the camera fly off on its own to look around (WASD, drag
@@ -234,26 +276,45 @@ int main()
             swinging = true;
             swingStart = swingTop = io.MousePos;
             power = 0.0f;
+            backStartTime = downStartTime = -1.0f;
         }
         if (swinging) {
             ImVec2 m = io.MousePos;
+            // a few pixels of slack so hand jitter doesn't start a clock. The move
+            // began during the last frame, hence now - dt
+            if (downStartTime < 0.0f && swingTop.y - m.y > 3.0f) downStartTime = now - dt;
             if (!io.MouseDown[1] || game.state() != BallState::Ready) {
                 swinging = false;                    // let go before impact: no shot
                 power = 0.0f;
             } else if (m.y > swingTop.y) {
                 swingTop = m;                        // still going back
+                swingTopTime = now;
+                downStartTime = -1.0f;
+                if (backStartTime < 0.0f && m.y > swingStart.y + 3.0f) backStartTime = now - dt;
                 power = std::min(1.0f, (swingTop.y - swingStart.y) / fullSwing);
             } else if (m.y <= swingStart.y && swingTop.y - swingStart.y > 10.0f) {
                 // impact. Club path = how much the downswing leaned sideways, as an
                 // angle off straight up; a quarter of it turns the shot so a slightly
                 // crooked swipe doesn't send it out of bounds
                 float path = std::atan2(m.x - swingTop.x, swingTop.y - m.y);
-                lastPathDeg = glm::degrees(path * 0.25f);
                 if (power > 0.02f) {
+                    float tempo = (swingTopTime - backStartTime) / (now - downStartTime);
+                    float scatter = tempoMultiplier(swingTuning, tempo);
+
+                    // capped at 2.5 standard deviations, so a clean swing can't hook wildly
+                    std::normal_distribution<float> gauss(0.0f, 1.0f);
+                    auto roll = [&]() { return std::clamp(gauss(rng), -2.5f, 2.5f); };
+                    float aimMiss = glm::radians(clubSpread(swingTuning, clubs, bag[bagSlot])) * scatter * roll();
+                    float powerMiss = 1.0f + swingTuning.powerSpread * scatter * roll();
+
+                    float offLine = path * 0.25f + aimMiss;
+                    lastPathDeg = glm::degrees(offLine);
+                    lastTempo = tempo;
                     tracer.clear();  // a new shot: start a fresh tracer from here
                     shotStart = game.ballPosition();
                     landed = wasAirborne = false;
-                    game.hit(aimAngle + path * 0.25f, power);
+                    // capped at 1: a full swing can come up short but never beats the club's yardage
+                    game.hit(aimAngle + offLine, std::clamp(power * powerMiss, 0.02f, 1.0f));
                 }
                 swinging = false;
             }
@@ -286,7 +347,7 @@ int main()
         }
 
         // ball waiting for the next shot: hand over the suggested club once
-        // (putter on the green and in mini golf); Q / E can still change it
+        // (putter on the green); Q / E can still change it
         if (game.state() != BallState::Ready) {
             needClub = true;
         } else if (needClub) {
@@ -320,9 +381,9 @@ int main()
             glm::vec3 eye = camTarget - aimDir * camDistance + glm::vec3(0, camHeight, 0);
             // don't let the camera sink into a hill behind the ball
             eye.y = std::max(eye.y, game.groundHeight(eye.x, eye.z) + 2.0f);
-            // real golf looks well down the hole (like the TV view from behind the
-            // golfer) so a 30-yard-high shot stays on screen; mini golf looks just ahead
-            glm::vec3 lookAt = camTarget + aimDir * (realGolf ? 30.0f : 3.0f);
+            // look well down the hole (like the TV view from behind the golfer)
+            // so a 30-yard-high shot stays on screen
+            glm::vec3 lookAt = camTarget + aimDir * 30.0f;
             lookAt.y = std::max(camTarget.y, game.groundHeight(lookAt.x, lookAt.z));
             view = glm::lookAt(eye, lookAt, glm::vec3(0, 1, 0));
         }
@@ -349,22 +410,10 @@ int main()
         ImGui::NewFrame();
         const ImVec2 screen = io.DisplaySize;
 
-        // Settings (top right, folded up to start): course, player, controls, tuning.
-        // Drawn first, because switching courses replaces the hole list read below.
+        // Settings (top right, folded up to start): player, controls, tuning.
         ImGui::SetNextWindowPos(ImVec2(screen.x - 16, 16), ImGuiCond_Always, ImVec2(1, 0));  // grows leftward when opened
         ImGui::SetNextWindowCollapsed(true, ImGuiCond_FirstUseEver);
         ImGui::Begin("Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-        int course = realGolf ? 1 : 0;
-        ImGui::RadioButton("Mini golf", &course, 0);
-        ImGui::SameLine();
-        ImGui::RadioButton("Real golf", &course, 1);
-        if ((course == 1) != realGolf) {
-            realGolf = course == 1;
-            game.loadCourse(realGolf);
-            courseDone = false;
-            newHole();
-            resetCamera();
-        }
         if (!clubs.empty() && ImGui::BeginCombo("Player", proPlayer.c_str())) {
             for (int i = 0; i < (int)clubs.size(); i++) {
                 if (i > 0 && clubs[i].player == clubs[i - 1].player) continue;  // each name once
@@ -388,19 +437,47 @@ int main()
             ImGui::BulletText("Hold right mouse (or both): pull down, push up to hit");
             ImGui::BulletText("Pull back farther for more power (red mark = full)");
             ImGui::BulletText("Lean the push left/right to start the ball left/right");
+            ImGui::BulletText("Tempo: take 3x as long going back as coming through");
+            ImGui::BulletText("Bad timing sprays the shot; long clubs spray the most");
             ImGui::BulletText("Q / E: longer / shorter club");
             ImGui::BulletText("Hold C: overview of the hole");
             ImGui::BulletText("R: restart hole   Esc: quit");
         }
         if (ImGui::CollapsingHeader("Physics tuning")) {
-            ImGui::SliderFloat("Max hit speed", &game.maxHitSpeed, 5.0f, 60.0f);
-            ImGui::SliderFloat("Rolling drag", &game.rollDrag, 0.0f, 2.0f);
-            ImGui::SliderFloat("Rolling friction", &game.rollFriction, 0.0f, 10.0f);
-            ImGui::SliderFloat("Landing roll", &game.landingRoll, 0.0f, 1.0f);
-            ImGui::SliderFloat("Wall bounce", &game.wallBounce, 0.0f, 1.0f);
-            ImGui::SliderFloat("Bumper bounce", &game.bumperBounce, 0.5f, 2.0f);
+            ImGui::SliderFloat("Max hit speed", &game.maxHitSpeed, 2.0f, 80.0f);
+            ImGui::SliderFloat("Max speed into cup", &game.maxSinkSpeed, 1.0f, 10.0f);
             ImGui::SliderFloat("Camera distance", &camDistance, 4.0f, 25.0f);
             ImGui::SliderFloat("Camera height", &camHeight, 1.0f, 15.0f);
+        }
+        if (ImGui::CollapsingHeader("Turf: bounce and roll")) {
+            // the shot preview replays with these every frame, so changes show right away
+            for (int s = 0; s < 4; s++) {
+                SurfaceFeel& f = game.feel[s];
+                ImGui::PushID(s);
+                ImGui::SeparatorText(surfaceName((Surface)s));
+                ImGui::SliderFloat("Bounce", &f.bounce, 0.0f, 0.8f);
+                ImGui::SliderFloat("Grip (spin bites)", &f.grip, 0.0f, 1.0f);
+                ImGui::SliderFloat("Softness (deg)", &f.softness, 0.0f, 30.0f);
+                ImGui::SliderFloat("Cushion", &f.cushion, 0.0f, 1.0f);
+                // roll as a stimpmeter reading: feet a ball rolls when let go at 1.83 m/s
+                float stimp = decelToStimp(f.rollDecel);
+                if (ImGui::SliderFloat("Roll (stimp ft)", &stimp, 0.3f, 15.0f, "%.1f", ImGuiSliderFlags_Logarithmic))
+                    f.rollDecel = stimpToDecel(std::max(stimp, 0.1f));
+                ImGui::SliderFloat("Grass drag", &f.rollDrag, 0.0f, 2.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+                ImGui::PopID();
+            }
+            if (ImGui::Button("Reset turf"))
+                for (int s = 0; s < 4; s++) game.feel[s] = turfDefaults[s];
+        }
+        if (ImGui::CollapsingHeader("Swing tuning")) {
+            ImGui::SliderFloat("Ideal tempo", &swingTuning.idealTempo, 1.5f, 5.0f);
+            ImGui::SliderFloat("Tempo window", &swingTuning.tempoWindow, 0.0f, 0.5f);
+            ImGui::SliderFloat("Tempo penalty", &swingTuning.tempoPenalty, 0.0f, 10.0f);
+            ImGui::SliderFloat("Max penalty", &swingTuning.maxPenalty, 1.0f, 10.0f);
+            ImGui::SliderFloat("Wedge spread (deg)", &swingTuning.wedgeSpread, 0.0f, 5.0f);
+            ImGui::SliderFloat("Driver spread (deg)", &swingTuning.driverSpread, 0.0f, 8.0f);
+            ImGui::SliderFloat("Putter spread (deg)", &swingTuning.putterSpread, 0.0f, 2.0f);
+            ImGui::SliderFloat("Power spread", &swingTuning.powerSpread, 0.0f, 0.05f);
         }
         ImGui::End();
 
@@ -448,8 +525,28 @@ int main()
         ImGui::Text("%.0f YDS TO PIN", toPinYd);
         ImGui::SameLine(0, 18);
         ImGui::TextDisabled("SHOT %d", game.strokes() + (game.state() == BallState::Ready ? 1 : 0));
+        if (game.state() != BallState::Sunk) {
+            // the lie: what the ball is sitting on (or rolling across right now)
+            Surface lie = game.surfaceAt(ball.x, ball.z);
+            ImVec4 lieColor = lie == Surface::Sand  ? ImVec4(0.95f, 0.85f, 0.55f, 1)
+                            : lie == Surface::Rough ? ImVec4(0.55f, 0.80f, 0.45f, 1)
+                                                    : ImVec4(0.65f, 1.0f, 0.60f, 1);
+            ImGui::TextDisabled("LIE");
+            ImGui::SameLine();
+            ImGui::TextColored(lieColor, "%s", upper(surfaceName(lie)).c_str());
+        }
         ImGui::PopFont();
         ImGui::End();
+
+        // the last swing's timing, on the same line as the text before it
+        auto showTempo = [&]() {
+            ImGui::SameLine(0, 18);
+            if (tempoMultiplier(swingTuning, lastTempo) <= 1.0f)
+                ImGui::TextColored(ImVec4(0.45f, 1.0f, 0.5f, 1), "TEMPO %.1f : 1 PERFECT", lastTempo);
+            else
+                ImGui::TextColored(ImVec4(1.0f, 0.65f, 0.3f, 1), "TEMPO %.1f : 1 %s", lastTempo,
+                                   lastTempo < swingTuning.idealTempo ? "BACK TOO FAST" : "DOWN TOO FAST");
+        };
 
         // club and power (bottom middle), then what the shot is doing
         ImGui::SetNextWindowPos(ImVec2(screen.x * 0.5f, screen.y - 16), ImGuiCond_Always, ImVec2(0.5f, 1.0f));
@@ -484,6 +581,7 @@ int main()
         } else if (game.state() == BallState::Rolling) {
             if (landed) ImGui::Text("CARRY %.0f YD", carryYd);
             else ImGui::Text("%s", wasAirborne ? "IN THE AIR..." : "ROLLING...");
+            showTempo();
         } else if (freeView) {
             ImGui::Text("FREE VIEW: WASD fly, drag to look, Space / Ctrl up / down, Shift faster, arrows aim");
         } else if (swinging) {
@@ -496,6 +594,7 @@ int main()
             else ImGui::Text("ROLLED %.0f YD", totalYd);
             ImGui::SameLine(0, 18);
             ImGui::TextDisabled("%.1f DEG %s", std::fabs(lastPathDeg), lastPathDeg >= 0 ? "RIGHT" : "LEFT");
+            showTempo();
         } else {
             ImGui::Text("Hold right mouse, pull down, push up to swing");
         }
@@ -551,7 +650,8 @@ int main()
         // shot preview: play the shot out on a copy of the game (like the editor's
         // bot does), so it uses the exact same physics and ground as the real one.
         // Full power until you swing, then however far you've pulled back.
-        // It aims straight: a crooked push still turns the real shot.
+        // It shows the shot you're aiming at: a crooked push, tempo and club scatter
+        // still move the real one.
         if (game.state() == BallState::Ready && !courseDone) {
             GolfGame sim = game;
             sim.hit(aimAngle, swinging ? std::max(power, 0.02f) : 1.0f);

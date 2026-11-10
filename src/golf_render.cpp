@@ -153,51 +153,63 @@ void GolfRenderer::buildHole(const GolfGame& game) {
     // bounding box of all the greens
     glm::vec2 lo(1e9f), hi(-1e9f);
     for (const Rect& r : h.greens) { lo = glm::min(lo, r.min); hi = glm::max(hi, r.max); }
+    // ...plus the band of rough around them, which is in play too
+    glm::vec2 playLo = lo - glm::vec2(h.roughWidth), playHi = hi + glm::vec2(h.roughWidth);
 
     // greens: a grid of 1x1 cells that follows the height function.
     // A checkerboard of two shades (like mowing stripes) makes slopes easy to read.
-    std::vector<GLfloat> light, dark;
-    for (int ix = (int)std::floor(lo.x); ix < (int)std::ceil(hi.x); ++ix)
-        for (int iz = (int)std::floor(lo.y); iz < (int)std::ceil(hi.y); ++iz) {
+    // Cells off the fairway but still in play are rough.
+    std::vector<GLfloat> light, dark, roughCells;
+    for (int ix = (int)std::floor(playLo.x); ix < (int)std::ceil(playHi.x); ++ix)
+        for (int iz = (int)std::floor(playLo.y); iz < (int)std::ceil(playHi.y); ++iz) {
             float x0 = (float)ix, z0 = (float)iz, x1 = x0 + 1, z1 = z0 + 1;
-            if (!game.onGreen(x0 + 0.5f, z0 + 0.5f)) continue;
-            // real golf (greenRadius > 0): plain fairway, the putting green goes on top below
+            glm::vec3 a(x0, H(x0, z0), z0), b(x1, H(x1, z0), z0), c(x1, H(x1, z1), z1), d(x0, H(x0, z1), z1);
+            if (!game.onGreen(x0 + 0.5f, z0 + 0.5f)) {
+                if (game.surfaceAt(x0 + 0.5f, z0 + 0.5f) != Surface::OutOfBounds) pushQuad(roughCells, a, b, c, d);
+                continue;
+            }
+            // with a putting green (greenRadius > 0): plain fairway, the green goes on top below
             bool stripe = h.greenRadius == 0.0f &&
                           ((int)std::floor(x0 / 4.0f) + (int)std::floor(z0 / 4.0f)) % 2 == 0;
-            pushQuad(stripe ? light : dark,
-                     glm::vec3(x0, H(x0, z0), z0), glm::vec3(x1, H(x1, z0), z0),
-                     glm::vec3(x1, H(x1, z1), z1), glm::vec3(x0, H(x0, z1), z1));
+            pushQuad(stripe ? light : dark, a, b, c, d);
         }
     greenLight.upload(light);
     greenDark.upload(dark);
+    roughInPlay.upload(roughCells);
 
-    // putting green (real golf): a smooth round disc around the cup, made of
-    // 1 m wide rings cut into 64 slices so it follows any hills under it
-    std::vector<GLfloat> putting;
-    const int slices = 64;
-    for (float r0 = 0.0f; r0 < h.greenRadius; r0 += 1.0f) {
-        float r1 = std::min(r0 + 1.0f, h.greenRadius);
-        for (int i = 0; i < slices; ++i) {
-            float a0 = 6.2831853f * i / slices, a1 = 6.2831853f * (i + 1) / slices;
-            auto at = [&](float r, float a) {
-                float x = h.cup.x + r * std::cos(a), z = h.cup.z + r * std::sin(a);
-                return glm::vec3(x, H(x, z), z);
-            };
-            pushQuad(putting, at(r0, a0), at(r1, a0), at(r1, a1), at(r0, a1));
+    // a smooth round patch on the ground, made of 1 m wide rings cut into 64
+    // slices so it follows any hills under it
+    auto pushDisc = [&](std::vector<GLfloat>& v, glm::vec2 center, float radius) {
+        const int slices = 64;
+        for (float r0 = 0.0f; r0 < radius; r0 += 1.0f) {
+            float r1 = std::min(r0 + 1.0f, radius);
+            for (int i = 0; i < slices; ++i) {
+                float a0 = 6.2831853f * i / slices, a1 = 6.2831853f * (i + 1) / slices;
+                auto at = [&](float r, float a) {
+                    float x = center.x + r * std::cos(a), z = center.y + r * std::sin(a);
+                    return glm::vec3(x, H(x, z), z);
+                };
+                pushQuad(v, at(r0, a0), at(r1, a0), at(r1, a1), at(r0, a1));
+            }
         }
-    }
+    };
+    // putting green around the cup, and the bunkers
+    std::vector<GLfloat> putting, sandVerts;
+    pushDisc(putting, glm::vec2(h.cup.x, h.cup.z), h.greenRadius);
+    for (const Bunker& bk : h.bunkers) pushDisc(sandVerts, bk.center, bk.radius);
     puttingGreen.upload(putting);
+    sand.upload(sandVerts);
 
     // rough: a coarser grid around the course, a bit below the greens.
     // Outside the course it keeps the height of the nearest edge, so steep
-    // shapes like the halfpipe don't shoot off into the sky.
+    // shapes don't shoot off into the sky. This outer part is out of bounds.
     std::vector<GLfloat> roughVerts;
     auto roughH = [&](float x, float z) {
-        return H(std::clamp(x, lo.x, hi.x), std::clamp(z, lo.y, hi.y)) - 0.6f;
+        return H(std::clamp(x, playLo.x, playHi.x), std::clamp(z, playLo.y, playHi.y)) - 0.6f;
     };
     const float margin = 60.0f, cell = 2.0f;
-    for (float x0 = lo.x - margin; x0 < hi.x + margin; x0 += cell)
-        for (float z0 = lo.y - margin; z0 < hi.y + margin; z0 += cell) {
+    for (float x0 = playLo.x - margin; x0 < playHi.x + margin; x0 += cell)
+        for (float z0 = playLo.y - margin; z0 < playHi.y + margin; z0 += cell) {
             float x1 = x0 + cell, z1 = z0 + cell;
             pushQuad(roughVerts,
                      glm::vec3(x0, roughH(x0, z0), z0), glm::vec3(x1, roughH(x1, z0), z0),
@@ -284,13 +296,15 @@ void GolfRenderer::draw(const GolfGame& game, const glm::mat4& view, const glm::
 
     const Hole& h = game.hole();
     drawMesh(rough,      glm::vec4(0.20f, 0.45f, 0.18f, 1.0f));
+    drawMesh(roughInPlay, glm::vec4(0.25f, 0.55f, 0.21f, 1.0f));  // between the out of bounds and the fairway
     drawMesh(greenLight, glm::vec4(0.38f, 0.78f, 0.32f, 1.0f));
     drawMesh(greenDark,  glm::vec4(0.31f, 0.68f, 0.27f, 1.0f));
-    // the putting green sits on the same ground as the fairway; the polygon
-    // offset makes it win the depth test so the two don't flicker
+    // the putting green and bunkers sit on the same ground as the fairway; the
+    // polygon offset makes them win the depth test so the two don't flicker
     glEnable(GL_POLYGON_OFFSET_FILL);
     glPolygonOffset(-1.0f, -1.0f);
     drawMesh(puttingGreen, glm::vec4(0.40f, 0.80f, 0.34f, 1.0f));
+    drawMesh(sand,         glm::vec4(0.91f, 0.84f, 0.62f, 1.0f));
     glDisable(GL_POLYGON_OFFSET_FILL);
     drawMesh(walls,      glm::vec4(0.55f, 0.36f, 0.20f, 1.0f));
     for (const Bumper& b : h.bumpers)
@@ -322,7 +336,8 @@ void GolfRenderer::draw(const GolfGame& game, const glm::mat4& view, const glm::
 }
 
 void GolfRenderer::cleanup() {
-    for (Mesh* m : { &sphere, &cube, &greenLight, &greenDark, &puttingGreen, &rough, &walls }) m->release();
+    for (Mesh* m : { &sphere, &cube, &greenLight, &greenDark, &puttingGreen, &rough, &walls, &roughInPlay, &sand })
+        m->release();
     if (shader) glDeleteProgram(shader);
     shader = 0;
     builtVersion = -1;

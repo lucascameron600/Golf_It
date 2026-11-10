@@ -66,6 +66,13 @@ std::string holeToCpp(const Hole& h) {
     o << in << "h.startAim = " << num(h.startAim) << ";\n";
     o << in << "h.cup = glm::vec3(" << num(h.cup.x) << ", 0, " << num(h.cup.z) << ");\n";
     o << in << "h.cupRadius = " << num(h.cupRadius) << ";\n";
+    if (h.tee > 0.0f) o << in << "h.tee = " << num(h.tee) << ";\n";
+    if (h.greenRadius > 0.0f) o << in << "h.greenRadius = " << num(h.greenRadius) << ";\n";
+    if (h.roughWidth > 0.0f) o << in << "h.roughWidth = " << num(h.roughWidth) << ";\n";
+    // bunkers go in on their own: their dips are already among the stamps below
+    for (const Bunker& b : h.bunkers)
+        o << in << "h.bunkers.push_back(Bunker{ {" << num(b.center.x) << ", " << num(b.center.y) << "}, "
+          << num(b.radius) << " });\n";
     if (h.path.size() >= 2) {
         o << in << "h.path = { ";
         for (size_t i = 0; i < h.path.size(); ++i)

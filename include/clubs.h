@@ -23,4 +23,15 @@ void printClubDistances(const std::vector<ClubDistance>& clubs);
 int suggestClub(const std::vector<ClubDistance>& clubs, const std::vector<int>& bag,
                 float toPinMeters, bool putting);
 
+// How a tour player's ball comes down with a club that carries this far: the
+// angle it drops in at, its speed, and the backspin it still has. Long clubs come
+// in flat and fast with little spin (and run out), wedges steep and spinning
+// (and stop). Worked out from the carry so it fits any player in the CSV.
+struct ClubLanding {
+    float angleDeg;  // below level
+    float speed;     // m/s
+    float spinRpm;   // backspin left at landing
+};
+ClubLanding clubLanding(float carryYards);
+
 #endif

@@ -25,7 +25,7 @@ IMGUI_SRC = \
 
 
 
-# mini golf game (reuses the window setup, sphere model loader and glad)
+# the golf game (reuses the window setup, sphere model loader and glad)
 GOLF_SRC = golf_main.cpp golf.cpp golf_render.cpp clubs.cpp render.cpp parseobj.cpp gl.c $(IMGUI_SRC)
 
 all: golf editor

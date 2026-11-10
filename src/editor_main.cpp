@@ -1,4 +1,4 @@
-// Mini golf level editor (for designing holes; not part of the game).
+// Golf level editor (for designing holes; not part of the game).
 //
 // Top view: drag the colored handles with the left mouse button, pan with the
 // right mouse button (or W/A/S/D), zoom with the scroll wheel.
@@ -259,11 +259,11 @@ struct Editor {
             path = "saved_holes/" + safeName + "_" + stamp + "_" + std::to_string(n) + ".txt";
         std::ofstream out(path);
         if (!out) { setStatus("Could not write " + path); return; }
-        out << "// Saved from the mini golf level editor on " << nice << "\n"
-            << "// Paste this block into buildCourse() in golf.cpp, just above the line\n"
+        out << "// Saved from the golf level editor on " << nice << "\n"
+            << "// Paste this block into buildRealCourse() in golf.cpp, just above the line\n"
             << "//     // ---- paste holes saved from the level editor above this line ----\n"
             << "// If it's a new version of an existing hole, delete that hole's old block.\n"
-            << "// Holes are played in the order they appear in buildCourse().\n\n"
+            << "// Holes are played in the order they appear in buildRealCourse().\n\n"
             << code;
         out.close();
         ImGui::SetClipboardText(code.c_str());
@@ -282,14 +282,18 @@ static bool axisPicker(char& axis) {
     return c;
 }
 
+// a plain par 3 like the course's: 150 m of fairway, rough around it, a green
 static Hole newHoleTemplate() {
     Hole h;
     h.name = "New Hole";
     h.par = 3;
+    h.tee = 0.15f;
+    h.cupRadius = 0.45f;
+    h.greenRadius = 15.0f;
+    h.roughWidth = 12.0f;
     h.start = glm::vec3(0, 0, 0);
-    h.cup = glm::vec3(0, 0, -40);
-    h.path = { {0, 4}, {0, -46} };
-    h.pathWidth = 14;
+    h.cup = glm::vec3(0, 0, -150);
+    h.rects.push_back(Rect{ {-20, -175}, {20, 8} });
     return h;
 }
 
@@ -298,7 +302,7 @@ static Hole newHoleTemplate() {
 int main()
 {
     Render render;
-    GLFWwindow* window = render.glfwSetup(1500, 900, "Mini Golf Level Editor");
+    GLFWwindow* window = render.glfwSetup(1500, 900, "Golf Level Editor");
     if (!window) return 1;
     render.imguiSetup(window);
 

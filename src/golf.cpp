@@ -2,6 +2,20 @@
 #include <cmath>
 #include <algorithm>
 
+// The spin math uses a real ball (radius 21.35 mm), not the 10x one
+// that's drawn: spin is stored in rad/s, so this turns it into surface speed.
+static const float REAL_BALL_RADIUS = 0.02135f;
+
+const char* surfaceName(Surface s) {
+    switch (s) {
+        case Surface::Green:   return "Green";
+        case Surface::Fairway: return "Fairway";
+        case Surface::Rough:   return "Rough";
+        case Surface::Sand:    return "Sand";
+        default:               return "Out of bounds";
+    }
+}
+
 // ---------- small math helpers for terrain ----------
 
 // smooth 0 -> 1 as t goes from a to b (flat at both ends, so no sharp kinks).
@@ -84,18 +98,11 @@ float holeGroundHeight(const Hole& h, float x, float z) {
 
 static const float WALL_HEIGHT = 1.0f;
 
-// a wall/block covering x1..x2, z1..z2 on the ground
-static Box block(float x1, float z1, float x2, float z2) {
+// a wall/block covering x1..x2, z1..z2 on the ground (the level editor writes
+// walls with this, so it's here for holes pasted from it)
+[[maybe_unused]] static Box block(float x1, float z1, float x2, float z2) {
     return Box{ glm::vec3(std::min(x1, x2), 0.0f, std::min(z1, z2)),
                 glm::vec3(std::max(x1, x2), WALL_HEIGHT, std::max(z1, z2)) };
-}
-
-// four walls (1 unit thick) around a rectangle of green
-static void addBorder(Hole& h, float minX, float minZ, float maxX, float maxZ) {
-    h.walls.push_back(block(minX - 1, minZ - 1, maxX + 1, minZ));     // north
-    h.walls.push_back(block(minX - 1, maxZ,     maxX + 1, maxZ + 1)); // south
-    h.walls.push_back(block(minX - 1, minZ,     minX,     maxZ));     // west
-    h.walls.push_back(block(maxX,     minZ,     maxX + 1, maxZ));     // east
 }
 
 void finalizeHole(Hole& h) {
@@ -125,137 +132,24 @@ void finalizeHole(Hole& h) {
     for (Bumper& b : h.bumpers) b.center.y = holeGroundHeight(h, b.center.x, b.center.z);
 }
 
-static std::vector<Hole> buildCourse() {
-    std::vector<Hole> course;
-
-    // Hole 1: straight, with a block in the middle to go around (or bank past)
-    {
-        Hole h;
-        h.name = "Straight Shot";
-        h.par = 2;
-        h.start = glm::vec3(0, 0, 25);
-        h.startAim = 0.0f;
-        h.cup = glm::vec3(0, 0, -24);
-        h.cupRadius = 0.85f;
-        h.rects.push_back(Rect{ {-6, -30}, {6, 30} });
-        addBorder(h, -6, -30, 6, 30);
-        h.walls.push_back(block(-3, -1, 3, 1));
-        course.push_back(h);
-    }
-
-    // Hole 2: L-shaped dogleg to the right, with a block guarding the cup
-    {
-        Hole h;
-        h.name = "Dogleg";
-        h.par = 3;
-        h.start = glm::vec3(0, 0, 0);
-        h.startAim = 0.0f;
-        h.cup = glm::vec3(25, 0, -24);
-        h.cupRadius = 0.85f;
-        h.rects.push_back(Rect{ {-6, -30}, {6, 6} });    // up the left side
-        h.rects.push_back(Rect{ {6, -30}, {30, -18} });  // across the top
-        h.walls.push_back(block(-7, -31, 31, -30));  // north
-        h.walls.push_back(block(-7, 6, 7, 7));       // south end of the first leg
-        h.walls.push_back(block(-7, -30, -6, 6));    // west
-        h.walls.push_back(block(6, -18, 7, 6));      // inside of the bend
-        h.walls.push_back(block(6, -18, 31, -17));   // south side of the second leg
-        h.walls.push_back(block(30, -30, 31, -17));  // east end
-        h.walls.push_back(block(17, -27, 19, -21));  // block in front of the cup
-        course.push_back(h);
-    }
-
-    // Hole 3: a field of bouncy bumpers
-    {
-        Hole h;
-        h.name = "Bumper Alley";
-        h.par = 3;
-        h.start = glm::vec3(0, 0, 30);
-        h.startAim = 0.0f;
-        h.cup = glm::vec3(0, 0, -30);
-        h.cupRadius = 0.85f;
-        h.rects.push_back(Rect{ {-10, -35}, {10, 35} });
-        addBorder(h, -10, -35, 10, 35);
-        float r = 1.5f;
-        glm::vec2 posts[] = { {-5, 18}, {5, 18}, {0, 8}, {-6, -2}, {6, -2},
-                              {0, -12}, {-4, -21}, {4, -21} };
-        for (glm::vec2 p : posts) h.bumpers.push_back(Bumper{ glm::vec3(p.x, 0, p.y), r });
-        course.push_back(h);
-    }
-
-    // Hole 4: a long downhill run with rollers and a banked (tilted) section
-    {
-        Hole h;
-        h.name = "Downhill Run";
-        h.par = 4;
-        h.start = glm::vec3(0, 0, 0);
-        h.startAim = 0.0f;
-        h.cup = glm::vec3(0, 0, -255);
-        h.cupRadius = 0.85f;
-        h.path = { {0, 4}, {0, -262} };
-        h.pathWidth = 14;
-        h.stamps.push_back(Stamp::ramp('z', -5, -235, -32));                                  // 32 units downhill
-        h.stamps.push_back(Stamp::rollers('z', 1.5f, 37.7f).limit(-50, -110, 50, -30, 15));  // bumpy waves
-        h.stamps.push_back(Stamp::tilt(0.22f, 0).limit(-50, -200, 50, -120, 20));           // tilts to one side
-        h.stamps.push_back(Stamp::bump(0, -255, 6, -1.2f));                                   // dip around the cup
-        h.bumpers.push_back(Bumper{ glm::vec3(-3, 0, -150), 1.2f });
-        h.bumpers.push_back(Bumper{ glm::vec3(3, 0, -175), 1.2f });
-        h.bumpers.push_back(Bumper{ glm::vec3(-2, 0, -215), 1.2f });
-        course.push_back(h);
-    }
-
-    // Hole 5: switchbacks down a mountain; the whole course leans downhill to +x,
-    // so the long legs are tilted and the ball drifts toward the lower wall
-    {
-        Hole h;
-        h.name = "Switchback Mountain";
-        h.par = 7;
-        h.start = glm::vec3(0, 0, 0);
-        h.startAim = 0.0f;
-        h.cup = glm::vec3(100, 0, -100);
-        h.cupRadius = 0.9f;
-        h.path = { {0, 4}, {0, -90}, {50, -90}, {50, -10}, {100, -10}, {100, -100} };
-        h.pathWidth = 14;
-        h.stamps.push_back(Stamp::ramp('x', -5, 93, -18));                                   // the mountain
-        h.stamps.push_back(Stamp::rollers('z', 0.7f, 25.13f).limit(42, -80, 58, -20, 4));   // ripples
-        h.stamps.push_back(Stamp::bump(100, -100, 5, -1.5f));                                // dip around the cup
-        h.walls.push_back(block(-2, -45, 2, -41));     // blocks to steer around
-        h.walls.push_back(block(96, -55, 104, -52));
-        course.push_back(h);
-    }
-
-    // Hole 6: a U-shaped halfpipe with a launch ramp; land it and roll into the cup
-    {
-        Hole h;
-        h.name = "Halfpipe Jump";
-        h.par = 4;
-        h.start = glm::vec3(0, 0, 0);
-        h.startAim = 0.0f;
-        h.cup = glm::vec3(0, 0, -180);
-        h.cupRadius = 0.9f;
-        h.path = { {0, 6}, {0, -186} };
-        h.pathWidth = 24;
-        h.stamps.push_back(Stamp::pipe('z', 0, 0.07f));            // U shape: sides curve up
-        h.stamps.push_back(Stamp::ramp('z', -65, -85, 3, true));   // launch ramp, steepest at the lip
-        h.stamps.push_back(Stamp::ramp('z', -85, -89, -4));        // drops away after the lip
-        h.stamps.push_back(Stamp::bump(0, -180, 6, -1.5f));        // dip around the cup
-        course.push_back(h);
-    }
-
-    // ---- paste holes saved from the level editor above this line ----
-
-    for (Hole& h : course) finalizeHole(h);
-    return course;
+// a round bunker at x, z, sunk into a shallow dip so it reads as a hollow and
+// a ball near the lip trickles in (keep it clear of the putting green)
+static void addBunker(Hole& h, float x, float z, float radius) {
+    h.bunkers.push_back(Bunker{ glm::vec2(x, z), radius });
+    h.stamps.push_back(Stamp::bump(x, z, radius * 0.5f, -0.35f));
 }
 
-// Full-size golf holes, separate from the mini golf course. Units are meters
-// (gravity is 9.8), so a 150 m par 3 is about 165 yards. No walls: leaving the
-// playable area is out of bounds (back to the last spot, +1 stroke). The ball
-// starts each hole on a tee. The ball is 0.4 m wide (about 10x real size so you
-// can still see it), and the tee and cup are scaled to match.
+// The course: full-size golf holes. Units are meters
+// (gravity is 9.8), so a 150 m par 3 is about 165 yards. No walls: the fairway
+// (the rects) has a band of rough around it, and past that is out of bounds
+// (back to the last spot, +1 stroke). The ball starts each hole on a tee. The
+// ball is 0.4 m wide (about 10x real size so you can still see it), and the tee
+// and cup are scaled to match. Green, fairway, rough and sand each bounce and
+// roll differently (GolfGame::feel).
 static std::vector<Hole> buildRealCourse() {
     std::vector<Hole> course;
 
-    // Hole 1: straight par 3, 150 m (164 yd)
+    // Hole 1: straight par 3, 150 m (164 yd), bunkers either side of the green
     {
         Hole h;
         h.name = "Par 3 - 164 yd";
@@ -263,10 +157,14 @@ static std::vector<Hole> buildRealCourse() {
         h.tee = 0.15f;
         h.cupRadius = 0.45f;
         h.greenRadius = 15.0f;
+        h.roughWidth = 12.0f;
         h.start = glm::vec3(0, 0, 0);
         h.startAim = 0.0f;
         h.cup = glm::vec3(0, 0, -150);
         h.rects.push_back(Rect{ {-20, -175}, {20, 8} });
+        addBunker(h, -21, -146, 5.0f);   // left of the green
+        addBunker(h, 17, -134, 4.0f);    // short right
+        h.stamps.push_back(Stamp::bump(25, -150, 20, 1.0f)); 
         course.push_back(h);
     }
 
@@ -278,11 +176,15 @@ static std::vector<Hole> buildRealCourse() {
         h.tee = 0.15f;
         h.cupRadius = 0.45f;
         h.greenRadius = 15.0f;
+        h.roughWidth = 12.0f;
         h.start = glm::vec3(0, 0, 0);
         h.startAim = 0.0f;
         h.cup = glm::vec3(110, 0, -250);
         h.rects.push_back(Rect{ {-25, -280}, {25, 8} });     // first leg, 50 m wide
         h.rects.push_back(Rect{ {25, -280}, {140, -220} });  // turn to the right
+        addBunker(h, 0, -270, 6.0f);     // through the corner: catches a drive that runs too far
+        addBunker(h, 33, -212, 5.0f);    // inside the corner: punishes cutting it
+        addBunker(h, 128, -232, 4.5f);   // behind the green on the right
         course.push_back(h);
     }
 
@@ -294,13 +196,19 @@ static std::vector<Hole> buildRealCourse() {
         h.tee = 0.15f;
         h.cupRadius = 0.45f;
         h.greenRadius = 15.0f;
+        h.roughWidth = 15.0f;
         h.start = glm::vec3(0, 0, 0);
         h.startAim = 0.0f;
         h.cup = glm::vec3(0, 0, -460);
         h.rects.push_back(Rect{ {-30, -490}, {30, 8} });
         h.stamps.push_back(Stamp::rollers('z', 1.0f, 60.0f).limit(-40, -380, 40, -60, 20));
+        addBunker(h, 22, -270, 6.0f);    // fairway bunkers in the driving zone
+        addBunker(h, -24, -300, 6.0f);
+        addBunker(h, -18, -448, 5.0f);   // short left of the green
         course.push_back(h);
     }
+
+    // ---- paste holes saved from the level editor above this line ----
 
     for (Hole& h : course) finalizeHole(h);
     return course;
@@ -309,14 +217,7 @@ static std::vector<Hole> buildRealCourse() {
 // ---------- game flow ----------
 
 GolfGame::GolfGame() {
-    holes = buildCourse();
-    loadHole(0);
-}
-
-void GolfGame::loadCourse(bool realGolf) {
-    holes = realGolf ? buildRealCourse() : buildCourse();
-    radius = realGolf ? 0.2f : 0.5f;  // real golf: a smaller ball (still ~10x real size so you can see it)
-    scores.clear();
+    holes = buildRealCourse();
     loadHole(0);
 }
 
@@ -343,20 +244,22 @@ int GolfGame::addHole(const Hole& h) {
 
 void GolfGame::placeBall(glm::vec3 position) {
     ballPos = position;
-    prevPos = position;
+    ballVel = glm::vec3(0.0f);
     lastRestPos = position;
     ballState = BallState::Ready;
     outOfBounds = false;
+    spin = glm::vec3(0.0f);
 }
 
 void GolfGame::resetHole() {
     ballPos = hole().start + glm::vec3(0, radius + hole().tee, 0);
-    prevPos = ballPos;
+    ballVel = glm::vec3(0.0f);
     lastRestPos = ballPos;
     ballState = BallState::Ready;
     strokeCount = 0;
     outOfBounds = false;
     accumulator = 0.0f;
+    spin = glm::vec3(0.0f);
 }
 
 bool GolfGame::nextHole() {
@@ -379,7 +282,7 @@ int GolfGame::totalPar() const {
 }
 
 float GolfGame::speed() const {
-    return glm::length(ballPos - prevPos) / dt;
+    return glm::length(ballVel);
 }
 
 void GolfGame::hit(float aimAngle, float power) {
@@ -396,13 +299,21 @@ void GolfGame::hit(float aimAngle, float power) {
         // putt: aim along the ground, so uphill/downhill shots follow the slope
         glm::vec3 n = groundNormal(ballPos.x, ballPos.z);
         dir = glm::normalize(dir - glm::dot(dir, n) * n);
-        vel = dir * (power * maxHitSpeed);
+        // a putt rolls v^2 / 2a, so sqrt(power) makes half power roll half as
+        // far (like the full shots above)
+        vel = dir * (std::sqrt(power) * maxHitSpeed);
     }
     flying = launchAngle > 0.0f;
+    // full shots get their backspin when they land (landLikeARealBall); a putt
+    // starts out rolling, so the spin matches the speed and nothing skids
+    spin = glm::vec3(0.0f);
+    if (!flying) {
+        glm::vec3 n = groundNormal(ballPos.x, ballPos.z);
+        spin = glm::cross(n, vel) / REAL_BALL_RADIUS;
+    }
 
-    // Verlet has no velocity variable: moving prevPos backwards gives the ball speed
     lastRestPos = ballPos;
-    prevPos = ballPos - vel * dt;
+    ballVel = vel;
     strokeCount++;
     outOfBounds = false;
     slowTime = 0.0f;
@@ -441,6 +352,32 @@ bool GolfGame::onGreen(float x, float z, float margin) const {
             z >= g.min.y + margin - 0.01f && z <= g.max.y - margin + 0.01f)
             return true;
     return false;
+}
+
+// Putting green first, then sand, then fairway (the rects), then the band of
+// rough around them. Anything else is out of bounds.
+Surface GolfGame::surfaceAt(float x, float z) const {
+    const Hole& h = hole();
+    glm::vec2 p(x, z);
+    if (h.greenRadius > 0.0f && glm::length(p - glm::vec2(h.cup.x, h.cup.z)) < h.greenRadius)
+        return Surface::Green;
+    for (const Bunker& b : h.bunkers)
+        if (glm::length(p - b.center) < b.radius) return Surface::Sand;
+    if (onGreen(x, z)) return Surface::Fairway;
+    if (h.roughWidth > 0.0f) {
+        // within roughWidth of any fairway rectangle (so the corners are rounded)
+        for (const Rect& r : h.greens) {
+            float dx = std::max({ r.min.x - x, 0.0f, x - r.max.x });
+            float dz = std::max({ r.min.y - z, 0.0f, z - r.max.y });
+            if (dx * dx + dz * dz <= h.roughWidth * h.roughWidth) return Surface::Rough;
+        }
+    }
+    return Surface::OutOfBounds;
+}
+
+const SurfaceFeel& GolfGame::feelAt(float x, float z) const {
+    Surface s = surfaceAt(x, z);
+    return feel[s == Surface::OutOfBounds ? (int)Surface::Rough : (int)s];
 }
 
 // ---------- collisions ----------
@@ -508,50 +445,140 @@ void GolfGame::keepInsideCourse(glm::vec3 oldPos, glm::vec3& vel) {
     if (!onGreen(ballPos.x, ballPos.z, radius)) { ballPos.x = oldPos.x; ballPos.z = oldPos.z; }
 }
 
+// ---------- ball and turf ----------
+//
+// The ball is a solid sphere with spin. Where it touches the grass, the bottom
+// of the ball moves at vel + spin x (-R n). If that isn't zero the ball is
+// slipping, and friction pushes against the slip: it slows the ball and changes
+// its spin until the bottom stops sliding, which is a pure roll. For a solid
+// ball that takes an impulse of 2/7 of the slip (the other 5/7 is the spin
+// catching up). Backspin makes the bottom slide forward faster, so friction
+// takes more speed off: that's why a wedge checks up and a driver runs out.
+
+// push against the slip with at most `maxImpulse` (m/s); contact is toward -n
+static void applyTurfFriction(glm::vec3& vel, glm::vec3& spin, glm::vec3 n, float maxImpulse) {
+    glm::vec3 r = -REAL_BALL_RADIUS * n;                 // ball center -> contact point
+    glm::vec3 u = vel + glm::cross(spin, r);             // how the bottom of the ball is moving
+    glm::vec3 slip = u - glm::dot(u, n) * n;             // the part sliding along the grass
+    float s = glm::length(slip);
+    if (s < 1e-5f || maxImpulse <= 0.0f) return;
+    glm::vec3 impulse = -slip / s * std::min(2.0f / 7.0f * s, maxImpulse);
+    vel += impulse;
+    // torque from the push at the contact point; a solid ball's I = 2/5 m R^2
+    spin += glm::cross(r, impulse) * (5.0f / (2.0f * REAL_BALL_RADIUS * REAL_BALL_RADIUS));
+}
+
+// The flight has no air, so the ball arrives far too fast and flat. Keep its
+// heading and swap in a real ball's landing for this club: angle, speed and
+// backspin (scaled by how hard it was hit, 1 = a full swing).
+void GolfGame::landLikeARealBall(glm::vec3& vel) {
+    glm::vec3 flat(vel.x, 0.0f, vel.z);
+    float f = glm::length(flat);
+    if (f < 1e-4f || maxHitSpeed <= 0.0f) return;
+    glm::vec3 dir = flat / f;
+    float share = std::clamp(glm::length(vel) / maxHitSpeed, 0.0f, 1.2f);
+    float v = landingSpeed * share;
+    vel = dir * (v * std::cos(landingAngle)) + glm::vec3(0.0f, -v * std::sin(landingAngle), 0.0f);
+    // backspin: the top of the ball turns back toward the golfer
+    float w = landingSpin * share * 6.2831853f / 60.0f;  // rpm -> rad/s
+    spin = glm::cross(dir, glm::vec3(0.0f, 1.0f, 0.0f)) * w;
+}
+
+// One impact with the ground. The turf gives way, so a hard, steep landing
+// effectively hits a little ramp tilted back toward the ball (a pitch mark).
+// Penner's model of golf ball bounce, with the tilt growing with speed and
+// steepness, and the softness of the turf setting how much.
+void GolfGame::bounceOnTurf(glm::vec3& vel, glm::vec3 n) {
+    float vn = glm::dot(vel, n);
+    if (vn > -1.0f) {             // just settling onto the grass while rolling: no bounce
+        vel -= vn * n;
+        return;
+    }
+    const SurfaceFeel& f = feelAt(ballPos.x, ballPos.z);
+    glm::vec3 along = vel - vn * n;
+    float s = glm::length(along);
+    glm::vec3 fwd = s > 1e-4f ? along / s : glm::vec3(0.0f);
+
+    // the pitch mark: tilt the ground back toward the ball
+    float speed = glm::length(vel);
+    float steep = std::atan2(-vn, s);                     // radians below the ground
+    float tilt = glm::radians(f.softness) * (speed / 20.0f) * (steep / 0.785398f);
+    tilt = std::min(tilt, 0.6f);                          // ~35 degrees: past that it would bounce backward
+    glm::vec3 m = glm::normalize(n * std::cos(tilt) - fwd * std::sin(tilt));
+
+    float vm = glm::dot(vel, m);
+    if (vm >= 0.0f) { vel -= vn * n; return; }
+    // bounce: soft landings come back up with `bounce`, hard ones lose more
+    // (turf dents and stays dented), down to about a third of it at 20 m/s
+    float e = f.bounce * (1.0f - 0.65f * std::min(-vm / 20.0f, 1.0f));
+    float push = -(1.0f + e) * vm;
+    vel += push * m;
+    // friction during the impact: at most grip * the push
+    applyTurfFriction(vel, spin, m, f.grip * push);
+
+    // long grass and sand don't just rub the ball, they wrap around it and
+    // swallow part of its forward speed and spin
+    float out = glm::dot(vel, n);
+    vel -= (vel - out * n) * f.cushion;
+    spin *= 1.0f - f.cushion;
+    // a deep pitch mark can leave the ball heading back into the real ground
+    if (out < 0.0f) vel -= out * n;
+}
+
+// While the ball is on the grass (and not leaving it): first the leftover slip
+// (backspin after a landing, or picking up speed down a slope) is worn down by
+// friction, at most grip * g each second. Then rolling resistance slows the roll.
+void GolfGame::rollOnTurf(glm::vec3& vel, glm::vec3 n) {
+    if (glm::dot(vel, n) > 0.5f) return;  // bouncing up off the ground
+    const SurfaceFeel& f = feelAt(ballPos.x, ballPos.z);
+    applyTurfFriction(vel, spin, n, f.grip * -gravity * n.y * dt);
+
+    glm::vec3 along = vel - glm::dot(vel, n) * n;
+    float s = glm::length(along);
+    float newS = s - (f.rollDecel + f.rollDrag * s * s) * dt;
+    if (newS <= 0.0f || s < 1e-6f) {
+        vel -= along;                 // stopped: the grass holds it, spin and all
+        spin = glm::vec3(0.0f);
+        return;
+    }
+    glm::vec3 change = along * (newS / s) - along;
+    vel += change;
+    // slow the spin with it, so the ball keeps rolling instead of starting to slide
+    spin += glm::cross(n, change) / REAL_BALL_RADIUS;
+}
+
 // ---------- physics step ----------
 
 void GolfGame::physicsStep() {
     glm::vec3 oldPos = ballPos;
-    // velocity in units/second, recovered from Verlet positions
-    glm::vec3 vel = (ballPos - prevPos) / dt;
+    glm::vec3 vel = ballVel;   // m/s
     glm::vec3 n = groundNormal(ballPos.x, ballPos.z);
     bool onGround = ballPos.y - radius <= groundHeight(ballPos.x, ballPos.z) + 0.02f;
 
-    // rolling friction: only while touching the ground, only on the part of
-    // the velocity that runs along the surface
-    if (onGround) {
-        glm::vec3 along = vel - glm::dot(vel, n) * n;
-        float s = glm::length(along);
-        float newS = s - (rollDrag * s + rollFriction) * dt;
-        glm::vec3 newAlong = (newS <= 0.0f || s < 1e-6f) ? glm::vec3(0.0f) : along * (newS / s);
-        vel += newAlong - along;
-    }
-    prevPos = ballPos - vel * dt;
+    // rolling: only while touching the ground (spin, slip and the turf's slowdown)
+    if (onGround) rollOnTurf(vel, n);
 
     // Verlet step (same idea as Engine::performVerlet). Gravity pulls straight
     // down; the ground below removes the part going into it, so what's left
     // makes the ball roll down slopes and slow down going up them.
-    glm::vec3 temp = ballPos;
-    ballPos = ballPos + (ballPos - prevPos) + glm::vec3(0, gravity, 0) * (dt * dt);
-    prevPos = temp;
-    vel = (ballPos - prevPos) / dt;
+    // This is the same math as pos + (pos - prevPos) + g dt^2, but with the
+    // velocity kept on its own: working it out as (pos - prevPos) / dt subtracts
+    // two nearly equal numbers, and hundreds of meters from the origin float
+    // rounding then bends slow putts sideways by up to a couple of meters.
+    vel += glm::vec3(0, gravity, 0) * dt;
+    ballPos += vel * dt;
 
     // ground contact
     float ground = groundHeight(ballPos.x, ballPos.z);
     n = groundNormal(ballPos.x, ballPos.z);
     if (ballPos.y < ground + radius) {
+        // every touchdown is a proper bounce off whatever turf is here
         ballPos.y = ground + radius;
-        float vn = glm::dot(vel, n);
-        if (vn < 0.0f) {
-            float bounce = (vn < -3.0f) ? 0.3f : 0.0f;   // landings bounce a little
-            vel -= (1.0f + bounce) * vn * n;
-        }
         if (flying) {
-            // first landing of a full shot: the ball digs in and its backspin
-            // grabs, so it keeps only a small part of its speed (bounce included)
-            vel *= landingRoll;
+            landLikeARealBall(vel);
             flying = false;
         }
+        bounceOnTurf(vel, n);
     }
     // (if the ground drops away faster than the ball falls, e.g. over the top of
     //  a hill or off a ramp, there's no contact and the ball flies)
@@ -559,7 +586,7 @@ void GolfGame::physicsStep() {
     for (const Box& w : hole().walls) collideBox(w, vel);
     for (const Bumper& b : hole().bumpers) collideBumper(b, vel);
     if (hole().autoWalls) keepInsideCourse(oldPos, vel);
-    prevPos = ballPos - vel * dt;
+    ballVel = vel;
 
     float spd = glm::length(vel);
     ground = groundHeight(ballPos.x, ballPos.z);
@@ -570,17 +597,20 @@ void GolfGame::physicsStep() {
     if (touching && glm::length(toCup) < hole().cupRadius && spd < maxSinkSpeed) {
         ballState = BallState::Sunk;
         ballPos = hole().cup + glm::vec3(0, 0.05f, 0); // drop into the hole
-        prevPos = ballPos;
+        ballVel = glm::vec3(0.0f);
         return;
     }
 
     // escaped the course somehow: put it back with a 1 stroke penalty.
-    // Only once it's on the ground, so a shot can fly over the rough
+    // Only once it's on the ground, so a shot can fly over the out of bounds
+    // (the rough is still in play)
     bool lost = hole().autoWalls ? ballPos.y < ground - 20.0f
-                                 : ((touching && !onGreen(ballPos.x, ballPos.z)) || ballPos.y < -5.0f);
+                                 : ((touching && surfaceAt(ballPos.x, ballPos.z) == Surface::OutOfBounds) ||
+                                    ballPos.y < -5.0f);
     if (lost) {
         ballPos = lastRestPos;
-        prevPos = ballPos;
+        ballVel = glm::vec3(0.0f);
+        spin = glm::vec3(0.0f);
         strokeCount++;
         outOfBounds = true;
         ballState = BallState::Ready;
@@ -591,7 +621,8 @@ void GolfGame::physicsStep() {
     rollTime += dt;
     slowTime = (touching && spd < 0.3f) ? slowTime + dt : 0.0f;
     if (slowTime > 0.4f || rollTime > 45.0f) {
-        prevPos = ballPos;
+        ballVel = glm::vec3(0.0f);
+        spin = glm::vec3(0.0f);
         ballState = BallState::Ready;
     }
 }

@@ -6,11 +6,38 @@
 #include <glm/glm.hpp>
 
 // Game logic only (no OpenGL here), so it can be tested without a window.
-// Coordinates: y is up, the course lies in x/z.
+// Coordinates: y is up, the course lies in x/z. Units are meters.
 
 struct Box    { glm::vec3 min, max; };          // walls and block obstacles (only x/z are used for collision)
 struct Bumper { glm::vec3 center; float radius; }; // round bouncy posts
-struct Rect   { glm::vec2 min, max; };          // a piece of playable green (x/z)
+struct Rect   { glm::vec2 min, max; };          // a piece of fairway (x/z)
+struct Bunker { glm::vec2 center; float radius; }; // a round patch of sand (x/z)
+
+// What the ball is sitting on (or bouncing off). Each one has its own
+// SurfaceFeel below.
+enum class Surface { Green, Fairway, Rough, Sand, OutOfBounds };
+const char* surfaceName(Surface s);   // "Green", "Fairway", ...
+
+// How one kind of turf treats a landing ball and a rolling ball.
+// A bounce works like a real one: the turf gives way a little, so the ball hits a
+// small ramp tilted back toward it (a pitch mark), pushes back up with `bounce`,
+// and its friction grabs the ball's forward speed and backspin. Then it rolls.
+struct SurfaceFeel {
+    float bounce;     // share of the speed into the ground that comes back up on a soft landing
+                      // (hard landings get about 1/3 of this, like real turf)
+    float grip;       // friction between ball and grass: how much forward speed and backspin a bounce grabs
+    float softness;   // how deep a pitch mark is, as degrees of tilt for a 20 m/s landing at 45 degrees.
+                      // More = steep shots dig in and stop, flat ones still skip forward
+    float cushion;    // share of the forward speed (and spin) the grass or sand swallows on each bounce
+    float rollDecel;  // m/s^2 a rolling ball slows by (set a green with stimpToDecel below)
+    float rollDrag;   // extra slowdown that grows with speed squared: it hardly touches a putt, but
+                      // a ball running out at 10 m/s is skipping over the blades and slows a lot more
+};
+
+// Stimpmeter: a ball let go at 1.83 m/s rolls this many feet. A constant slowdown
+// a gives a roll of v^2 / 2a, so the two convert directly.
+inline float stimpToDecel(float stimpFeet) { return 1.83f * 1.83f / (2.0f * stimpFeet * 0.3048f); }
+inline float decelToStimp(float decel)     { return 1.83f * 1.83f / (2.0f * decel * 0.3048f); }
 
 // One piece of terrain shape. A hole's ground height is all its stamps added
 // together, so hills, ramps and tilts can be mixed freely (and edited in the
@@ -51,13 +78,16 @@ struct Hole {
     glm::vec3 start{0.0f};    // where the ball is placed (y is filled in automatically)
     float startAim = 0.0f;    // initial aim angle (radians, 0 = toward -z)
     float tee = 0.0f;         // the first shot sits this high on a tee (0 = on the ground)
-    float greenRadius = 0.0f; // real golf: size of the putting green around the cup; the rest
-                              // is drawn as plain fairway (0 = mini golf checkerboard everywhere)
+    float greenRadius = 0.0f; // size of the putting green around the cup; the rest is fairway
+                              // (0 = no putting green: the whole course is drawn as a checkerboard)
+    float roughWidth = 0.0f;  // a band of rough this wide around the fairway (the rects) is
+                              // still in play; past it is out of bounds (0 = no rough)
+    std::vector<Bunker> bunkers; // sand (see addBunker in golf.cpp, which also digs a dip)
     glm::vec3 cup{0.0f};      // center of the hole (y is filled in automatically)
     float cupRadius = 0.85f;
 
-    // Where you can play. Use rectangles, a path, or both:
-    std::vector<Rect> rects;          // rectangles of green
+    // Where you can play (the fairway). Use rectangles, a path, or both:
+    std::vector<Rect> rects;          // rectangles of fairway
     std::vector<glm::vec2> path;      // a winding course through these points (x, z)...
     float pathWidth = 14.0f;          // ...this wide
     bool autoWalls = false;           // edges of the green act as walls (always on with a path)
@@ -85,7 +115,6 @@ public:
     GolfGame();
 
     // course flow
-    void loadCourse(bool realGolf);  // false = mini golf holes, true = full-size golf holes
     void loadHole(int index);
     void resetHole();               // replay the current hole from the start
     bool nextHole();                // false if this was the last hole
@@ -121,20 +150,46 @@ public:
     float groundHeight(float x, float z) const;
     glm::vec3 groundNormal(float x, float z) const;
     bool onGreen(float x, float z, float margin = 0.0f) const;
+    Surface surfaceAt(float x, float z) const;    // green, fairway, rough, sand or out of bounds
     bool wasReset() const { return outOfBounds; } // ball left the course last stroke
 
     // tuning (public so they can be tweaked from ImGui)
-    float maxHitSpeed   = 30.0f;  // units per second at full power
-    float rollDrag      = 0.4f;   // slows fast balls (proportional to speed)
-    float rollFriction  = 2.5f;   // constant slowdown so balls actually stop
+    float maxHitSpeed   = 6.0f;   // m/s at full power. The club sets it; this default is the putter's,
+                                  // which rolls about 36 m on a stimp 11 green
     float wallBounce    = 0.7f;   // 1 = perfectly bouncy, 0 = dead stop
     float bumperBounce  = 1.15f;  // bumpers add a little energy
-    float maxSinkSpeed  = 9.0f;   // faster than this and the ball rolls over the cup
+    // A ball drops if it falls about its own radius while crossing the cup:
+    // 2 * cupRadius * sqrt(g / (2 * ballRadius)). That's ~1.6 m/s for a real ball
+    // and cup, and ~4.5 m/s for this 10x ball and 0.45 m cup
+    float maxSinkSpeed  = 4.5f;   // faster than this and the ball rolls over the cup
     float launchAngle   = 0.0f;   // radians above level: 0 = putt along the ground, more = the ball flies
-    float landingRoll   = 0.2f;   // share of its speed a flying ball keeps when it first lands
+
+    // The flight has no air, so a ball comes down far faster and flatter than a
+    // real one (a driver lands at ~60 m/s instead of ~30). On the first touchdown
+    // it's given what a real ball has as it comes down with this club, scaled by
+    // how hard it was hit. The club sets these (see clubLanding in clubs.h).
+    float landingAngle  = 0.79f;  // radians below level (tour 7-iron: about 50 deg)
+    float landingSpeed  = 24.0f;  // m/s
+    float landingSpin   = 5500.0f;// backspin, rpm
+    // Green, Fairway, Rough, Sand (index with (int)Surface). Out of bounds uses Rough.
+    // Tuned so tour clubs run out about like they do on TV (Tour Average, full swing):
+    //   driver   fairway ~30 yd (first hop ~1.8 m high), rough ~7, sand stays put
+    //   7-iron   fairway ~5 yd, green ~2, rough ~1.5
+    //   wedge    green: one hop and stops, a full 100-yd wedge spins back ~3 yd
+    SurfaceFeel feel[4] = {
+        //  bounce  grip   softness cushion  roll slowdown        grass drag
+        {   0.40f,  0.40f, 16.0f,   0.05f,   stimpToDecel(11.0f), 0.00f },  // green: soft, holds spin, stimp 11
+        {   0.38f,  0.40f, 12.0f,   0.12f,   0.90f,               0.05f },  // fairway: firm, hops forward and runs
+        {   0.20f,  0.30f,  8.0f,   0.50f,   2.50f,               0.25f },  // rough: swallows the ball, no spin
+        {   0.03f,  0.60f,  4.0f,   0.90f,   6.00f,               1.00f },  // sand: plugs where it lands
+    };
+    const SurfaceFeel& feelAt(float x, float z) const;
 
 private:
     void physicsStep();
+    void rollOnTurf(glm::vec3& vel, glm::vec3 n);    // slip and rolling resistance
+    void bounceOnTurf(glm::vec3& vel, glm::vec3 n);  // one impact with the ground
+    void landLikeARealBall(glm::vec3& vel);          // swap the no-air arrival for a real one
     void collideBox(const Box& box, glm::vec3& vel);
     void collideBumper(const Bumper& b, glm::vec3& vel);
     void keepInsideCourse(glm::vec3 oldPos, glm::vec3& vel);
@@ -143,15 +198,17 @@ private:
     int holeIndex = 0;
     int version = 0;
 
-    // Verlet integration like the sandbox: velocity is (pos - prevPos)
-    glm::vec3 ballPos, prevPos;
+    // Verlet integration like the sandbox, with the velocity stored on its own
+    // (see physicsStep) so float rounding far from the origin can't bend the ball
+    glm::vec3 ballPos, ballVel{0.0f};
     glm::vec3 lastRestPos;        // where the last stroke was taken from
-    float radius = 0.5f;
+    float radius = 0.2f;          // a 0.4 m ball: ~10x real size so you can still see it
     BallState ballState = BallState::Ready;
     int strokeCount = 0;
     std::vector<int> scores;
     bool outOfBounds = false;
     bool flying = false;          // hit into the air and hasn't landed yet
+    glm::vec3 spin{0.0f};         // the ball's spin (rad/s, axis = direction, for a real-size ball)
     float slowTime = 0.0f;        // how long the ball has been almost still
     float rollTime = 0.0f;        // how long this shot has been rolling
 

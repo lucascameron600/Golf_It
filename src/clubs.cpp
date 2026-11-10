@@ -46,3 +46,29 @@ int suggestClub(const std::vector<ClubDistance>& clubs, const std::vector<int>& 
     }
     return best;
 }
+
+// Three anchor clubs, in between is a straight line:
+//   land angle: TrackMan PGA Tour averages (driver 38, 5-iron 49, PW 52 deg)
+//   speed and backspin at landing: measured landings in golf ball bounce research
+//   (driver ~29.5 m/s with ~1950 rpm, 5-iron ~25 m/s with ~4440 rpm,
+//    wedge ~22 m/s with ~9000 rpm; spin drops by a fifth or more in the air)
+ClubLanding clubLanding(float carryYards) {
+    struct Anchor { float yards; ClubLanding land; };
+    static const Anchor anchors[] = {
+        { 100.0f, { 52.0f, 22.0f, 9000.0f } },  // wedge
+        { 194.0f, { 49.0f, 25.0f, 4440.0f } },  // 5-iron
+        { 275.0f, { 38.0f, 29.5f, 1950.0f } },  // driver
+    };
+    if (carryYards <= anchors[0].yards) return anchors[0].land;
+    for (int i = 0; i + 1 < 3; i++) {
+        const Anchor& a = anchors[i];
+        const Anchor& b = anchors[i + 1];
+        if (carryYards <= b.yards) {
+            float t = (carryYards - a.yards) / (b.yards - a.yards);
+            return { a.land.angleDeg + (b.land.angleDeg - a.land.angleDeg) * t,
+                     a.land.speed    + (b.land.speed    - a.land.speed)    * t,
+                     a.land.spinRpm  + (b.land.spinRpm  - a.land.spinRpm)  * t };
+        }
+    }
+    return anchors[2].land;  // longer than a tour driver: lands like one
+}

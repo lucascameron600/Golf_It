@@ -37,6 +37,7 @@ private:
     GLint modelLoc = -1, colorLoc = -1;
     Mesh sphere, cube;
     Mesh greenLight, greenDark, puttingGreen, rough, walls;  // rebuilt for each hole
+    Mesh roughInPlay, sand;  // the playable band of rough, and the bunkers
     int builtVersion = -1;  // which version of the hole the meshes were built for
 };
 
